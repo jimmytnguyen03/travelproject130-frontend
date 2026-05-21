@@ -86,6 +86,12 @@ function toHotelReservations(payload) {
   return [
     {
       Hotel_Code: Number.isFinite(hotelCode) ? hotelCode : 0,
+      Hotel_Name:
+        payload.hotel.name ||
+        payload.hotel.hotelName ||
+        payload.hotel.Hotel_Name ||
+        payload.hotel.title ||
+        'Hotel name unavailable',
       Check_In_Date: normalizeDate(payload.hotel.checkIn, normalizeDate(payload.searchParams?.fromDate)),
       Check_In_Time: normalizeTime(payload.hotel.checkInTime),
       Check_Out_Date: normalizeDate(payload.hotel.checkOut, normalizeDate(payload.searchParams?.toDate || payload.searchParams?.fromDate)),
@@ -141,14 +147,24 @@ function normalizeBookingResponse(response) {
 
 function normalizeBookingRecord(record) {
   return {
-    bookingId: Number(record?.Booking_Id ?? record?.booking_id ?? record?.id ?? 0) || 0,
+    bookingId: Number(record?.Booking_Id ?? record?.booking_id ?? record?.bookingId ?? record?.id ?? 0) || 0,
     userId: Number(record?.User_Id ?? record?.userId ?? 0) || 0,
-    agentId: Number(record?.Agent_Id ?? record?.agentId ?? 0) || 0,
+    agentId: Number(record?.Agent_Id ?? record?.agentId ?? record?.tenantId ?? 0) || 0,
     startDate: normalizeDate(record?.Start_Date ?? record?.startDate),
     endDate: normalizeDate(record?.End_Date ?? record?.endDate),
     user: record?.user || null,
-    hotelReservations: Array.isArray(record?.hotel_reservations) ? record.hotel_reservations : [],
-    flightReservations: Array.isArray(record?.flight_reservations) ? record.flight_reservations : [],
+
+    hotelReservations: Array.isArray(record?.hotel_reservations)
+      ? record.hotel_reservations
+      : Array.isArray(record?.hotelReservations)
+        ? record.hotelReservations
+        : [],
+
+    flightReservations: Array.isArray(record?.flight_reservations)
+      ? record.flight_reservations
+      : Array.isArray(record?.flightReservations)
+        ? record.flightReservations
+        : [],
   }
 }
 
@@ -165,27 +181,31 @@ export const bookingService = {
     return normalizeBookingResponse(response)
   },
 
-  async listBookings({ userId, agentId }) {
-    const normalizedUserId = Number(userId)
-    const normalizedAgentId = Number(agentId)
+async listBookings({ userId, agentId }) {
+  const normalizedUserId = Number(userId)
+  const normalizedAgentId = Number(agentId)
 
-    if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
-      throw new Error('Please sign in first to view saved trips.')
-    }
+  if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
+    throw new Error('Please sign in first to view saved trips.')
+  }
 
-    const bookings = await api.get('/bookings/by-agent-user', {
-      params: {
-        agent_id: normalizedAgentId,
-        user_id: normalizedUserId,
-      },
-    })
+  const response = await api.get('/bookings/by-agent-user', {
+    params: {
+      agent_id: normalizedAgentId,
+      user_id: normalizedUserId,
+    },
+  })
 
-    const detailedBookings = (Array.isArray(bookings) ? bookings : []).map((booking) => {
-      return normalizeBookingRecord(booking)
-    })
+  const bookings = Array.isArray(response)
+    ? response
+    : response?.results || response?.data || response?.trips || []
 
-    return detailedBookings.sort((left, right) => {
-      return new Date(right.startDate).getTime() - new Date(left.startDate).getTime()
-    })
-  },
+  const detailedBookings = bookings.map((booking) => {
+    return normalizeBookingRecord(booking)
+  })
+
+  return detailedBookings.sort((left, right) => {
+    return new Date(right.startDate).getTime() - new Date(left.startDate).getTime()
+  })
+},
 }
